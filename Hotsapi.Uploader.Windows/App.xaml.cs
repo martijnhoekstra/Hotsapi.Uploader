@@ -1,5 +1,4 @@
 ﻿using Hotsapi.Uploader.Common;
-using Microsoft.Win32;
 using NLog;
 using Squirrel;
 using System;
@@ -34,6 +33,7 @@ namespace Hotsapi.Uploader.Windows
         public static Properties.Settings Settings { get { return Hotsapi.Uploader.Windows.Properties.Settings.Default; } }
         public static string AppExe { get { return Assembly.GetExecutingAssembly().Location; } }
         public static string AppDir { get { return Path.GetDirectoryName(AppExe); } }
+        public static string AppFile { get { return Path.GetFileName(AppExe); } }
         public bool UpdateAvailable
         {
             get {
@@ -57,22 +57,22 @@ namespace Hotsapi.Uploader.Windows
         public bool StartWithWindows
         {
             get {
-                var reg = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run");
-                return reg.GetValue("Hotsapi") != null;
+                var shortcuts = _updateManager.GetShortcutsForExecutable(AppFile, ShortcutLocation.Startup);
+                return shortcuts[ShortcutLocation.Startup] != null;
             }
             set {
-                var reg = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true);
+                _updateManager.CreateShortcutsForExecutable(AppFile, ShortcutLocation.Startup, false, "--autorun");
+                return;
                 if (value) {
-                    string command = $@"""{Directory.GetParent(AppDir)}\Update.exe"" --processStart Hotsapi.Uploader.exe --process-start-args ""--autorun""";
-                    reg.SetValue("Hotsapi", command);
+                    _updateManager.CreateShortcutsForExecutable(AppFile, ShortcutLocation.Startup, false, "--autorun");
                 } else {
-                    reg.DeleteValue("Hotsapi", false);
+                    _updateManager.RemoveShortcutsForExecutable(AppFile, ShortcutLocation.Startup);
                 }
             }
         }
 
         private static Logger _log = LogManager.GetCurrentClassLogger();
-        private IUpdateManager _updateManager;
+        private UpdateManager _updateManager;
         private bool _updateAvailable;
         private object _lock = new object();
 
@@ -130,6 +130,7 @@ namespace Hotsapi.Uploader.Windows
             try {
                 if (_updateManager == null) {
                     _updateManager = await UpdateManager.GitHubUpdateManager(Settings.UpdateRepository);
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(StartWithWindows)));
                 }
                 var release = await _updateManager.UpdateApp();
                 if (release != null) {
